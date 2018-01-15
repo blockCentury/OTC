@@ -1,17 +1,5 @@
 pragma solidity ^0.4.18;
 
-contract ERC20Interface {
-    function totalSupply() public constant returns (uint);
-    function balanceOf(address tokenOwner) public constant returns (uint balance);
-    function allowance(address tokenOwner, address spender) public constant returns (uint remaining);
-    function transfer(address to, uint tokens) public returns (bool success);
-    function approve(address spender, uint tokens) public returns (bool success);
-    function transferFrom(address from, address to, uint tokens) public returns (bool success);
-
-    event Transfer(address indexed from, address indexed to, uint tokens);
-    event Approval(address indexed tokenOwner, address indexed spender, uint tokens);
-}
-
 // utility contract for safe computation
 /**
   * The libName library does this and that...
@@ -42,41 +30,32 @@ this contract helps identify those ones
 */
 contract owned {
     address public owner;
-    address public newOwner;
-    event OwnershipTransferred(address indexed _from, address indexed _to);
 
-    function owned() {
-        owner = msg.sender;
-    }
+        function owned() public{
+            owner = msg.sender;
+        }
 
-    modifier onlyOwner {
-        require(msg.sender == owner);
-        _;
-    }
+        modifier onlyOwner {
+            require(msg.sender == owner);
+            _;
+        }
 
-    function transferOwnership(address _newOwner) onlyOwner {
-        newOwner = _newOwner;
+        function transferOwnership(address newOwner) onlyOwner public{
+            owner = newOwner;
+        }
     }
-
-    function acceptOwnership() public {
-        require(msg.sender == newOwner);
-        OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
-        newOwner = address(0);
-    }
-}
 
 /* helper contract for token-token interaction */
 interface tokenRecipient { function receiveApproval(address _from, uint256 _value, address _token, bytes _extraData) public; }
 /* main definition for our token*/
-contract OTC is owned, ERC20Interface {
+contract OTCPresale is owned{
     //member variables
     uint64 public sellPrice;
     uint64 public buyPrice;
     string public name = "blocktogoCoin";
-    string public symbol = "OTC";
+    string public symbol = "OTCPresale";
     uint8 public decimals = 3;
-    uint256 public totalSupply = 1000000000;
+    uint256 public totalSupply = 2000000000;
     bool public available = true;
     // uint64 public purchaseLimit = 120000000;
 
@@ -99,16 +78,16 @@ contract OTC is owned, ERC20Interface {
     /*notify contract holders there is a coin mint event*/
     event TokenMinted(address target, uint mintedAmount);
     /* Initializes contract with initial supply tokens to the creator of the contract */
-    function OTC(
+    function OTCPresale(
         uint64 tokenBuyPrice,
         uint64 tokenSellPrice
-    ) { 
+    )public { 
         balanceOf[msg.sender] = totalSupply*10**uint256(decimals);
         buyPrice = tokenBuyPrice;
         sellPrice = tokenSellPrice;
     }
 
-    function setDecimalPoints(uint8 _decimalUnit) onlyOwner{
+    function setDecimalPoints(uint8 _decimalUnit) onlyOwner public{
         decimals = _decimalUnit;
     }
 
@@ -145,7 +124,7 @@ contract OTC is owned, ERC20Interface {
     }
 
     /* Approve and then communicate the approved contract in a single tx */
-    function approveAndCall(address _spender, uint256 _value, bytes _extraData)
+    function approveAndCall(address _spender, uint256 _value, bytes _extraData) public
         returns (bool success) {
         tokenRecipient spender = tokenRecipient(_spender);
         if (approve(_spender, _value)) {
@@ -155,12 +134,12 @@ contract OTC is owned, ERC20Interface {
     }
 
     //control the availability of token in the sale
-    function setAvailibility(bool _canBuy) onlyOwner{
+    function setAvailibility(bool _canBuy) onlyOwner public{
         available = _canBuy;
     }
 
     //this is for system administration 
-    function lock(address _target) onlyOwner {
+    function lock(address _target) onlyOwner public{
         frozenAccount[_target] = true;
         FrozenFunds(_target, true);
     }
@@ -173,8 +152,8 @@ contract OTC is owned, ERC20Interface {
     }
     /*token holders can optionally request lock their account to hold the tokens,
     lockup duration can be 6 months, 12 months, 24 months and 36 months*/
-    function requestLock(uint how_many_months) returns(bool _success){
-        unlockDate[msg.sender] = safeAdd(now, how_many_months*1 minutes);
+    function requestLock(uint how_many_months) public returns(bool _success){
+        unlockDate[msg.sender] = SafeMath.safeAdd(now, how_many_months*1 minutes);
         if(how_many_months == 6){
             rewardPercentageMap[msg.sender] = 0;
         }else if(how_many_months == 12){
@@ -196,12 +175,12 @@ contract OTC is owned, ERC20Interface {
         FrozenFunds(_locked, false);
     }
     // helper function for administration
-    function unlock(address _locked) onlyOwner {
+    function unlock(address _locked) onlyOwner public{
         frozenAccount[_locked] = false;
         FrozenFunds(_locked, false);
     }
     //user can call this function to request reward for their lockup
-    function requestReward() returns(bool _success){
+    function requestReward() public returns(bool _success) {
         if(now < unlockDate[msg.sender]){
             revert();
         } 
@@ -213,31 +192,31 @@ contract OTC is owned, ERC20Interface {
     /*issue lockup reward to token holders, the rewardAmount depends on their balance and 
     how long they locked up */
     function issueReward(address _to) internal{
-        uint rewardAmount = safeMult(balanceOf[_to], rewardPercentageMap[_to])/100;
+        uint rewardAmount = SafeMath.safeMult(balanceOf[_to], rewardPercentageMap[_to])/100;
         transferFrom(owner, _to, rewardAmount);
         LogTransfer(owner, _to, rewardAmount);
     }
     //mint tokens to some address
-    function mintToken(address target, uint256 mintedAmount) onlyOwner {
-        balanceOf[target] = safeAdd(balanceOf[target], mintedAmount);
-        totalSupply = safeAdd(totalSupply, mintedAmount);
+    function mintToken(address target, uint256 mintedAmount) onlyOwner public{
+        balanceOf[target] = SafeMath.safeAdd(balanceOf[target], mintedAmount);
+        totalSupply = SafeMath.safeAdd(totalSupply, mintedAmount);
         LogTransfer(0, this, mintedAmount);
         LogTransfer(this, target, mintedAmount);
         TokenMinted(target, mintedAmount);
     }
 /*you can make the token's value be backed by ether (or other tokens) by 
 creating a fund that automatically sells and buys them at market value*/
-    function setPrices(uint64 newSellPrice, uint64 newBuyPrice) onlyOwner {
+    function setPrices(uint64 newSellPrice, uint64 newBuyPrice) onlyOwner public{
         sellPrice = newSellPrice;
         buyPrice = newBuyPrice;
     }
 // people can buy my shares and pay wei/eth
-    function buy() payable returns (uint amount){
+    function buy() payable public returns (uint amount) {
         CoinAvailability(available);
         if(!available){
             revert();
         } 
-        uint shares = safeDiv(msg.value,buyPrice);
+        uint shares = SafeMath.safeDiv(msg.value,buyPrice);
 
         // if(safeAdd(shares, balanceOf[msg.sender]) > purchaseLimit) {
         //     exceedPurchaseLimit(msg.sender, safeAdd(shares, balanceOf[msg.sender]),purchaseLimit);
@@ -252,7 +231,7 @@ creating a fund that automatically sells and buys them at market value*/
         return shares;                
     }
 // people can sell their shares and get wei.
-    function sell(uint256 amount) returns (uint revenue){
+    function sell(uint256 amount) public returns (uint revenue){
         // checks if the sender has enough to sell
         require(balanceOf[msg.sender] >= amount );
         require(!frozenAccount[msg.sender]);
@@ -269,14 +248,14 @@ creating a fund that automatically sells and buys them at market value*/
         }               
     }
     // function for withdraw funds
-    function withdraw() onlyOwner{
+    function withdraw() public onlyOwner{
         // owner.transfer(pendingWithdraw);
         owner.transfer(this.balance);
     }
 
-    function destroy() onlyOwner{ // so funds not locked in contract forever
+    function destroy() onlyOwner public{ // so funds not locked in contract forever
         if (msg.sender == owner) { 
-            suicide(owner); // send funds to organizer
+            selfdestruct(owner); // send funds to organizer
         }
     }
 
@@ -291,10 +270,10 @@ creating a fund that automatically sells and buys them at market value*/
      * signature you receive after reading terms of service.
      *
      */
-    function() payable {
+    function() payable public {
         CoinAvailability(available);
         require(available);
-        uint shares = safeDiv(msg.value, buyPrice);
+        uint shares = SafeMath.safeDiv(msg.value, buyPrice);
         transferFrom(owner, msg.sender, shares);
         // pendingWithdraw += msg.value;
 
